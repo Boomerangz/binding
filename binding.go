@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/go-martini/martini"
+  "database/sql"
 )
 
 /*
@@ -249,7 +250,19 @@ func mapForm(formStruct reflect.Value, form map[string][]string,
 				structField.Set(reflect.Zero(structField.Type()))
 			}
 		} else if typeField.Type.Kind() == reflect.Struct {
-			mapForm(structField, form, formfile, errors)
+			if _, ok := structField.Addr().Interface().(sql.Scanner); ok {
+        if inputFieldName := typeField.Tag.Get("form"); inputFieldName != "" {
+          if !structField.CanSet() {
+            continue
+          }
+          inputValue, exists := form[inputFieldName]
+          if exists {
+            setWithProperType(typeField.Type.Kind(), inputValue[0], structField, inputFieldName, errors)
+          }
+        }
+      } else {
+        mapForm(structField, form, formfile, errors)
+      }
 		} else if inputFieldName := typeField.Tag.Get("form"); inputFieldName != "" {
 			if !structField.CanSet() {
 				continue
@@ -320,7 +333,11 @@ func ErrorHandler(errs Errors, resp http.ResponseWriter) {
 // same type, so that not all deserialized values have to be strings.
 // Supported types are string, int, float, and bool.
 func setWithProperType(valueKind reflect.Kind, val string, structField reflect.Value, nameInTag string, errors Errors) {
-	switch valueKind {
+	if scan, ok := structField.Addr().Interface().(sql.Scanner); ok {
+      scan.Scan(val)
+      return
+  }
+  switch valueKind {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		if val == "" {
 			val = "0"
